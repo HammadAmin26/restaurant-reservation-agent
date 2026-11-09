@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --cream: #fbf6ec;
+  --surface: #ffffff;
+  --ink: #2b211b;
+  --muted: #6f6155;
+  --line: #e9dfce;
+  --brand: #9a3b1e;
+  --brand-dark: #7c2d14;
+  --danger: #b3261e;
+}
+
+@theme inline {
+  --color-cream: var(--cream);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-dark: var(--brand-dark);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-fraunces);
+}
+
+body {
+  background: var(--cream);
+  color: var(--ink);
+}
+
+/* Tailwind v4 gives buttons the default arrow cursor, so bring back the hand */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Used by the Toast component */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}

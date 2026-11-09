@@ -1,0 +1,182 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js" // Generates JavaScript, which works with CommonJS require()
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// One chat session between a customer and the agent
+model Conversation {
+  id           String        @id @default(cuid())
+  status       String        @default("active")
+  warningCount Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  messages     Message[]
+  warnings     Warning[]
+  reservations Reservation[]
+  proposals    Proposal[]
+}
+
+// One message inside a conversation
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  createdAt      DateTime     @default(now())
+  // Set when the chat shows a component with this message, such as
+  // "reservation_proposal" for a proposal card. Null for a plain message.
+  uiType         String?
+  // The proposal the card shows. Its current status is read from the proposal.
+  // Also set, without uiType, on the backend's reply to the card's buttons.
+  proposalId     String?
+  // The reservation a "reservation_lookup" card shows, found by its code and
+  // phone. It can be from another conversation.
+  reservationId  String?
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  // Restrict: a proposal can't be deleted while a message shows it
+  proposal       Proposal?    @relation(fields: [proposalId], references: [id], onDelete: Restrict)
+  // Restrict: a reservation can't be deleted while a message shows it
+  reservation    Reservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  // Speeds up loading a conversation's messages in time order
+  @@index([conversationId, createdAt])
+  @@index([proposalId])
+  @@index([reservationId])
+}
+
+// A warning given to a conversation for a message outside the restaurant's scope
+model Warning {
+  id             String       @id @default(cuid())
+  conversationId String
+  reason         String
+  // The guest message that caused the warning
+  messageId      String?
+  createdAt      DateTime     @default(now())
+  // Restrict: a conversation can't be deleted while it has warnings
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+}
+
+// A table booking. Cancelled reservations are kept, with status "cancelled".
+model Reservation {
+  id                  String    @id @default(cuid())
+  conversationId      String
+  // Shown to the guest, in the format RSV-XXXX
+  reservationCode     String    @unique
+  guestName           String
+  guestPhone          String
+  // Stored in UTC. Shown in the restaurant's timezone (Asia/Karachi).
+  // A buffet covers its whole session; à la carte lasts 2 hours.
+  startTime           DateTime
+  endTime             DateTime
+  // "buffet_lunch", "buffet_dinner", or "a_la_carte"
+  mealType            String
+  adults              Int
+  // Guests under the child age limit (12)
+  children            Int       @default(0)
+  // "confirmed" or "cancelled"
+  status              String    @default("confirmed")
+  // Integer paisa (PKR 1 = 100 paisa). À la carte has no fixed charge, so it can be 0.
+  estimatedTotalPaisa Int       @default(0)
+  specialRequest      String?
+  cancelledAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  conversation Conversation       @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  tables       ReservationTable[]
+  proposals    Proposal[]
+  extras       ReservationExtra[]
+  // Messages that show this reservation as a card after a code-and-phone lookup
+  messages     Message[]
+
+  @@index([conversationId])
+  // Finds the bookings for a date or time range, such as when checking availability
+  @@index([startTime, status])
+}
+
+// A physical table in the restaurant
+model RestaurantTable {
+  id          String   @id @default(cuid())
+  tableNumber String   @unique
+  // "GENERAL" or "FAMILY"
+  section     String
+  capacity    Int
+  // Inactive tables are kept for history but not offered for new bookings
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  reservations ReservationTable[]
+}
+
+// Links a reservation to a table it uses. A reservation can use several tables,
+// and a table can be used by different reservations at different times.
+model ReservationTable {
+  id            String   @id @default(cuid())
+  reservationId String
+  tableId       String
+  createdAt     DateTime @default(now())
+
+  reservation Reservation     @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  table       RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Restrict)
+
+  // The same table can't be added to one reservation twice
+  @@unique([reservationId, tableId])
+  @@index([tableId])
+}
+
+// A create, modify, or cancel request waiting for the guest to accept it
+model Proposal {
+  id             String   @id @default(cuid())
+  conversationId String
+  // Set when the proposal modifies or cancels an existing reservation
+  reservationId  String?
+  // "create", "modify", or "cancel"
+  actionType     String
+  // The proposed details, as a JSON string
+  payload        String
+  // "pending", "accepted", "rejected", "expired", or "declined"
+  // (declined: replaced by a newer proposal before it expired)
+  status         String   @default("pending")
+  // Set when the proposal is created (5 minutes later, from the policies)
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  reservation  Reservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  // Agent messages that show this proposal as a card
+  messages     Message[]
+
+  @@index([conversationId, status])
+  @@index([reservationId])
+}
+
+// An extra added to a reservation, such as a birthday cake
+model ReservationExtra {
+  id             String   @id @default(cuid())
+  reservationId  String
+  // The extra's key in restaurant-policies.js, such as "birthday_cake"
+  extraKey       String
+  name           String
+  quantity       Int      @default(1)
+  // Integer paisa (PKR 1 = 100 paisa). lineTotal is unitPrice x quantity.
+  unitPricePaisa Int
+  lineTotalPaisa Int
+  // "not_required", "pending", "approved", or "rejected"
+  approvalStatus String   @default("not_required")
+  createdAt      DateTime @default(now())
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  @@index([reservationId])
+}

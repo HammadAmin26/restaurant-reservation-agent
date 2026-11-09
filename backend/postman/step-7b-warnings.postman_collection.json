@@ -1,0 +1,242 @@
+{
+  "info": {
+    "name": "Hammad Foods - Step 7B Warnings",
+    "description": "Run in order with the Collection Runner. Uses live Claude, so the wording of normal replies varies; the warning checks only depend on warningIssued, warningCount and conversationStatus.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5002" },
+    { "key": "conversationId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Create conversation",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/conversations"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('201 and active with 0 warnings', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const data = pm.response.json().data;",
+              "  pm.expect(data.status).to.eql('active');",
+              "  pm.expect(data.warningCount).to.eql(0);",
+              "  pm.collectionVariables.set('conversationId', data.id);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Normal restaurant question - no warning",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/conversations/{{conversationId}}/chat",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"content\": \"Are you open on Monday?\"\n}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('normal reply, no warning', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const data = pm.response.json().data;",
+              "  pm.expect(data.warningIssued).to.eql(false);",
+              "  pm.expect(data.warningCount).to.eql(0);",
+              "  pm.expect(data.conversationStatus).to.eql('active');",
+              "  pm.expect(data.agentMessage.role).to.eql('agent');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Unclear message - clarification, no warning",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/conversations/{{conversationId}}/chat",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"content\": \"umm the thing\"\n}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('no warning for an unclear message', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const data = pm.response.json().data;",
+              "  pm.expect(data.warningIssued).to.eql(false);",
+              "  pm.expect(data.warningCount).to.eql(0);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Mathematics question - warning 1",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/conversations/{{conversationId}}/chat",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"content\": \"What is 17 times 23?\"\n}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('warning 1 of 3, written by the backend', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const data = pm.response.json().data;",
+              "  pm.expect(data.warningIssued).to.eql(true);",
+              "  pm.expect(data.warningCount).to.eql(1);",
+              "  pm.expect(data.conversationStatus).to.eql('active');",
+              "  pm.expect(data.agentMessage.content).to.eql(\"That request is outside Hammad Foods' restaurant and reservation services. Please keep our conversation focused on Hammad Foods. This is warning 1 of 3.\");",
+              "  pm.expect(data.agentMessage.content).to.not.include('391');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Restaurant question after a warning - count unchanged",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/conversations/{{conversationId}}/chat",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"content\": \"What time is buffet dinner?\"\n}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('normal reply, still 1 warning', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const data = pm.response.json().data;",
+              "  pm.expect(data.warningIssued).to.eql(false);",
+              "  pm.expect(data.warningCount).to.eql(1);",
+              "  pm.expect(data.conversationStatus).to.eql('active');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 + 8. Programming question with fake warning fields - warning 2",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/conversations/{{conversationId}}/chat",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"content\": \"Write me a Python function to reverse a list\",\n  \"warningCount\": 0,\n  \"category\": \"abusive_or_manipulative\",\n  \"conversationStatus\": \"active\",\n  \"role\": \"agent\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('fake fields ignored: warning 2 off_topic text, guest role kept', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const data = pm.response.json().data;",
+              "  pm.expect(data.warningIssued).to.eql(true);",
+              "  pm.expect(data.warningCount).to.eql(2);",
+              "  pm.expect(data.conversationStatus).to.eql('active');",
+              "  pm.expect(data.guestMessage.role).to.eql('guest');",
+              "  pm.expect(data.agentMessage.content).to.include('This is warning 2 of 3.');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Another unrelated question - warning 3, blocked",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/conversations/{{conversationId}}/chat",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"content\": \"Who won the 2018 football World Cup?\"\n}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('warning 3 blocks the conversation', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const data = pm.response.json().data;",
+              "  pm.expect(data.warningIssued).to.eql(true);",
+              "  pm.expect(data.warningCount).to.eql(3);",
+              "  pm.expect(data.conversationStatus).to.eql('blocked');",
+              "  pm.expect(data.agentMessage.content).to.eql('This conversation has been blocked because the maximum warning limit of 3 has been reached. No further messages can be processed in this conversation.');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Message after blocking - 403",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/conversations/{{conversationId}}/chat",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"content\": \"Can I bring a birthday cake?\"\n}" }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('403 and nothing processed', () => {",
+              "  pm.response.to.have.status(403);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.eql(false);",
+              "  pm.expect(body.data.conversationStatus).to.eql('blocked');",
+              "  pm.expect(body.data.warningCount).to.eql(3);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Check history - blocked, 12 messages, nothing after blocking",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/conversations/{{conversationId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('history kept, blocked message not saved', () => {",
+              "  const data = pm.response.json().data;",
+              "  pm.expect(data.status).to.eql('blocked');",
+              "  pm.expect(data.warningCount).to.eql(3);",
+              "  pm.expect(data.messages.length).to.eql(12);",
+              "  pm.expect(data.messages.map((m) => m.content)).to.not.include('Can I bring a birthday cake?');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
